@@ -1,0 +1,68 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-and-test:
+    name: Build, Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint with flake8
+        run: |
+          # Fail on syntax errors or undefined names
+          flake8 aceest_fitness wsgi.py --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Treat other issues as warnings (non-blocking)
+          flake8 aceest_fitness wsgi.py --count --max-line-length=100 --statistics --exit-zero
+
+      - name: Run tests
+        run: pytest
+
+  docker:
+    name: Docker Image Assembly & Containerized Tests
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t aceest-fitness:ci .
+
+      - name: Run tests inside the container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/tests:/app/tests:ro" \
+            -v "${{ github.workspace }}/requirements-dev.txt:/app/requirements-dev.txt:ro" \
+            -v "${{ github.workspace }}/pytest.ini:/app/pytest.ini:ro" \
+            --entrypoint sh aceest-fitness:ci \
+            -c "pip install --no-cache-dir -r requirements-dev.txt && pytest"
+
+      - name: Smoke test the running container
+        run: |
+          docker run -d --name aceest -p 5000:5000 aceest-fitness:ci
+          for i in $(seq 1 10); do
+            if curl -fsS http://localhost:5000/health; then echo "Healthy"; break; fi
+            sleep 3
+          done
+          curl -fsS http://localhost:5000/health | grep -q '"status":"ok"'
+          docker rm -f aceest
