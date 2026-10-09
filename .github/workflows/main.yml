@@ -55,7 +55,7 @@ jobs:
             -v "${{ github.workspace }}/requirements-dev.txt:/app/requirements-dev.txt:ro" \
             -v "${{ github.workspace }}/pytest.ini:/app/pytest.ini:ro" \
             --entrypoint sh aceest-fitness:ci \
-            -c "pip install --no-cache-dir -r requirements-dev.txt && pytest"
+            -c "pip install --no-cache-dir -r requirements-dev.txt && python -m pytest"
 
       - name: Smoke test the running container
         run: |
