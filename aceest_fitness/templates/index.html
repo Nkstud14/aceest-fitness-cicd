@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ACEest Fitness &amp; Gym</title>
+    <style>
+        :root { --gold: #d4af37; --dark: #1a1a1a; --panel: #262626; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: var(--dark); color: #f0f0f0; }
+        header { background: var(--gold); color: #000; padding: 24px; text-align: center; }
+        header h1 { margin: 0; letter-spacing: 1px; }
+        main { max-width: 960px; margin: 0 auto; padding: 24px; }
+        section { background: var(--panel); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+        h2 { color: var(--gold); border-bottom: 1px solid #444; padding-bottom: 8px; }
+        .program { border-left: 3px solid var(--gold); padding: 8px 14px; margin: 12px 0; }
+        .program h3 { margin: 0 0 6px; }
+        .muted { color: #aaa; font-size: 0.9em; }
+        ul { padding-left: 20px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ACEest Fitness &amp; Gym</h1>
+        <p>Train smart. Track progress. Stay consistent.</p>
+    </header>
+    <main>
+        <section>
+            <h2>Training Programs</h2>
+            {% for name, details in programs.items() %}
+            <div class="program">
+                <h3>{{ name }} <span class="muted">({{ details.code }})</span></h3>
+                <p><strong>Workout:</strong> {{ details.workout }}</p>
+                <p><strong>Nutrition:</strong> {{ details.diet }}</p>
+            </div>
+            {% endfor %}
+        </section>
+
+        <section>
+            <h2>Registered Clients</h2>
+            {% if clients %}
+            <ul>
+                {% for client in clients %}
+                <li>{{ client.name }} &mdash; {{ client.program or "No program assigned" }}
+                    ({{ client.membership_status }})</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="muted">No clients registered yet. Use the API to add one.</p>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>
