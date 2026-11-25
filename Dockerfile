@@ -1,56 +1,31 @@
-# Multi-stage build for ACEest Fitness Application
+# ---- Build a small, secure production image ----
+FROM python:3.12-slim AS base
 
-# Stage 1: Builder
-FROM python:3.11-slim as builder
-
-WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Stage 2: Runtime
-FROM python:3.11-slim
+# Prevent Python from writing .pyc files and buffering stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    sqlite3 \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies first to leverage Docker layer caching
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+# Copy application source
+COPY aceest_fitness ./aceest_fitness
+COPY wsgi.py ./
 
-# Set PATH for pip installed packages
-ENV PATH=/root/.local/bin:$PATH
-ENV PYTHONUNBUFFERED=1
-
-# Copy application code
-COPY . .
-
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# Run as an unprivileged user for security
+RUN adduser --disabled-password --gecos "" appuser \
+    && chown -R appuser:appuser /app
 USER appuser
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5000/health')" || exit 1
-
-# Expose port
 EXPOSE 5000
 
-# Set environment variables
-ENV FLASK_APP=ACEest_Fitness.py
-ENV FLASK_ENV=production
-ENV FLASK_DEBUG=false
+# Basic container health check hitting the Flask health endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:5000/health').status==200 else sys.exit(1)"
 
-# Run application with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "60", "--access-logfile", "-", "--error-logfile", "-", "ACEest_Fitness:app"]
+# Serve with Gunicorn (production WSGI server)
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "wsgi:app"]
