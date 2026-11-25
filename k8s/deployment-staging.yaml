@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    environment: staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aceest-config
+  namespace: staging
+data:
+  FLASK_ENV: "development"
+  FLASK_DEBUG: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-fitness-staging
+  namespace: staging
+  labels:
+    app: aceest-fitness
+    environment: staging
+    version: "3.2.4"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      environment: staging
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        environment: staging
+        version: "3.2.4"
+    spec:
+      serviceAccountName: aceest-fitness-staging
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: aceest-fitness
+        image: docker.io/username/aceest-fitness:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 5000
+          protocol: TCP
+        env:
+        - name: FLASK_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: aceest-config
+              key: FLASK_ENV
+        - name: FLASK_DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: aceest-config
+              key: FLASK_DEBUG
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: aceest-secrets
+              key: database-url
+              optional: true
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+              - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-fitness-staging
+  namespace: staging
+  labels:
+    app: aceest-fitness
+    environment: staging
+spec:
+  type: LoadBalancer
+  selector:
+    app: aceest-fitness
+    environment: staging
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: aceest-fitness-staging-hpa
+  namespace: staging
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: aceest-fitness-staging
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aceest-fitness-staging
+  namespace: staging
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aceest-secrets
+  namespace: staging
+type: Opaque
+data:
+  database-url: c3FsaXRlOi8vL2FjZWVzdF9maXRuZXNzLWRldi5kYg==  # sqlite:///aceest_fitness-dev.db

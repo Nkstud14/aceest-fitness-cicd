@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aceest-deployment-guide
+data:
+  QUICK_START.md: |
+    # ACEest Fitness - Quick Start Deployment Guide
+    
+    ## Prerequisites
+    - kubectl configured and connected to cluster
+    - Docker images pushed to registry
+    - Persistent volume support (for databases)
+    
+    ## Deployment Steps
+    
+    ### 1. Create Namespaces
+    ```bash
+    kubectl apply -f k8s/deployment-staging.yaml
+    kubectl apply -f k8s/deployment-production.yaml
+    ```
+    
+    ### 2. Verify Deployments
+    ```bash
+    # Check staging
+    kubectl get pods -n staging
+    kubectl get svc -n staging
+    
+    # Check production
+    kubectl get pods -n production
+    kubectl get svc -n production
+    ```
+    
+    ### 3. Access Applications
+    
+    **Staging:**
+    ```bash
+    kubectl port-forward svc/aceest-fitness-staging 5000:80 -n staging
+    # Access at http://localhost:5000
+    ```
+    
+    **Production:**
+    ```bash
+    kubectl port-forward svc/aceest-fitness 5000:80 -n production
+    # Access at http://localhost:5000
+    ```
+    
+    ### 4. Blue-Green Deployment (Optional)
+    ```bash
+    kubectl apply -f k8s/blue-green-deployment.yaml
+    # Service initially points to Blue (3.2.3)
+    # Deploy Green (3.2.4) alongside
+    # Switch when ready: kubectl patch service aceest-fitness...
+    ```
+    
+    ### 5. Canary Deployment (Optional)
+    ```bash
+    kubectl apply -f k8s/canary-deployment.yaml
+    # Gradual rollout with automatic rollback
+    ```
+    
+    ## Monitoring
+    
+    ```bash
+    # Watch deployment status
+    kubectl rollout status deployment/aceest-fitness -n production --watch
+    
+    # View logs
+    kubectl logs -f deployment/aceest-fitness -n production
+    
+    # Check resource usage
+    kubectl top pods -n production
+    
+    # Describe deployment
+    kubectl describe deployment aceest-fitness -n production
+    ```
+    
+    ## Scaling
+    
+    ```bash
+    # Manual scaling
+    kubectl scale deployment/aceest-fitness --replicas=5 -n production
+    
+    # Auto-scaling (via HPA in deployment)
+    kubectl get hpa -n production
+    kubectl describe hpa aceest-fitness-hpa -n production
+    ```
+    
+    ## Troubleshooting
+    
+    **Pod not starting:**
+    ```bash
+    kubectl describe pod <pod-name> -n production
+    kubectl logs <pod-name> -n production
+    ```
+    
+    **Image pull error:**
+    ```bash
+    kubectl create secret docker-registry regcred \
+      --docker-server=docker.io \
+      --docker-username=<username> \
+      --docker-password=<password> \
+      -n production
+    ```
+    
+    **Service not accessible:**
+    ```bash
+    kubectl get svc -n production
+    kubectl get endpoints aceest-fitness -n production
+    ```
+    
+    ## Cleanup
+    
+    ```bash
+    # Delete staging
+    kubectl delete namespace staging
+    
+    # Delete production
+    kubectl delete namespace production
+    ```
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docker-build-guide
+data:
+  BUILD_INSTRUCTIONS.sh: |
+    #!/bin/bash
+    
+    # ACEest Fitness Docker Build & Push Guide
+    
+    # Configuration
+    REGISTRY="docker.io"
+    USERNAME="your-username"
+    IMAGE_NAME="aceest-fitness"
+    VERSION="3.2.4"
+    
+    # Step 1: Build Docker Image
+    echo "Building Docker image..."
+    docker build -t ${USERNAME}/${IMAGE_NAME}:${VERSION} .
+    docker tag ${USERNAME}/${IMAGE_NAME}:${VERSION} ${USERNAME}/${IMAGE_NAME}:latest
+    docker tag ${USERNAME}/${IMAGE_NAME}:${VERSION} ${USERNAME}/${IMAGE_NAME}:build-${BUILD_NUMBER}
+    
+    # Step 2: Test Docker Image Locally
+    echo "Testing Docker image..."
+    docker run -d -p 5000:5000 \
+      -e FLASK_ENV=development \
+      -e FLASK_DEBUG=false \
+      --name aceest-test \
+      ${USERNAME}/${IMAGE_NAME}:${VERSION}
+    
+    # Wait for startup
+    sleep 5
+    
+    # Health check
+    curl -f http://localhost:5000/health || exit 1
+    echo "Health check passed!"
+    
+    # Cleanup
+    docker stop aceest-test
+    docker rm aceest-test
+    
+    # Step 3: Security Scan
+    echo "Running security scan..."
+    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+      aquasec/trivy image --severity HIGH,CRITICAL \
+      ${USERNAME}/${IMAGE_NAME}:${VERSION}
+    
+    # Step 4: Push to Registry
+    echo "Logging in to Docker registry..."
+    echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin ${REGISTRY}
+    
+    echo "Pushing to Docker registry..."
+    docker push ${USERNAME}/${IMAGE_NAME}:${VERSION}
+    docker push ${USERNAME}/${IMAGE_NAME}:latest
+    docker push ${USERNAME}/${IMAGE_NAME}:build-${BUILD_NUMBER}
+    
+    echo "Build and push completed successfully!"
+    
+    # Step 5: Verify Push
+    echo "Verifying push..."
+    docker pull ${USERNAME}/${IMAGE_NAME}:${VERSION}
+    
+    echo "✅ Docker image ready for deployment!"
